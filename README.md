@@ -1,1 +1,1 @@
-# cannibal_child_harmonic_module
+Módulo 1 – Análisis Armónico de Cannibal Child (XML/MIDI/Partituras).
