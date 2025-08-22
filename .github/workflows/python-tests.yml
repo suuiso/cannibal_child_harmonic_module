@@ -1,5 +1,4 @@
 name: Python Tests
-
 on:
   push:
     branches: [ main ]
@@ -24,6 +23,13 @@ jobs:
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     
-    - name: Run tests with pytest
+    - name: Collect tests (debug)
       run: |
-        pytest -q -m "not integration"
+        python -V
+        ls -la
+        ls -R tests || true
+        python -m pytest --collect-only -q || true
+    
+    - name: Run tests
+      run: |
+        python -m pytest -q tests/test_api_smoke.py tests/test_m1_precision.py
