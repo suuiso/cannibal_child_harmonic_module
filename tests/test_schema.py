@@ -12,14 +12,12 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from app import app
 
-
 @pytest.fixture
 def client():
     """Create a test client for the Flask app"""
     app.config['TESTING'] = True
     with app.test_client() as client:
         yield client
-
 
 def test_schema_endpoint_success(client):
     """Test that /m1/schema returns valid schema"""
@@ -29,7 +27,8 @@ def test_schema_endpoint_success(client):
     data = response.get_json()
     
     # Check basic schema structure
-    assert '$schema' in data
+    assert 'schema' in data
+    assert '$schema' in data['schema']
     assert '$id' in data
     assert 'title' in data
     assert 'version' in data
@@ -45,7 +44,6 @@ def test_schema_endpoint_success(client):
     # Check required properties
     assert 'version' in data['required']
     assert 'data' in data['required']
-
 
 def test_validate_endpoint_valid_data(client):
     """Test /m1/validate with valid data according to schema"""
@@ -70,7 +68,6 @@ def test_validate_endpoint_valid_data(client):
     assert 'module' in data
     assert data['module'] == 'harmonic_precision_analyzer_api'
 
-
 def test_validate_endpoint_invalid_data_missing_version(client):
     """Test /m1/validate with invalid data (missing version)"""
     sample_data = {
@@ -91,7 +88,6 @@ def test_validate_endpoint_invalid_data_missing_version(client):
     assert 'validation_error' in data
     assert 'module' in data
 
-
 def test_validate_endpoint_invalid_data_missing_data(client):
     """Test /m1/validate with invalid data (missing data object)"""
     sample_data = {
@@ -107,7 +103,6 @@ def test_validate_endpoint_invalid_data_missing_data(client):
     data = response.get_json()
     assert data['status'] == 'invalid'
     assert 'validation_error' in data
-
 
 def test_validate_endpoint_invalid_data_wrong_version(client):
     """Test /m1/validate with invalid version"""
@@ -129,7 +124,6 @@ def test_validate_endpoint_invalid_data_wrong_version(client):
     assert data['status'] == 'invalid'
     assert 'validation_error' in data
 
-
 def test_validate_endpoint_invalid_data_missing_id(client):
     """Test /m1/validate with missing required field in data object"""
     sample_data = {
@@ -148,7 +142,6 @@ def test_validate_endpoint_invalid_data_missing_id(client):
     data = response.get_json()
     assert data['status'] == 'invalid'
     assert 'validation_error' in data
-
 
 def test_validate_endpoint_invalid_data_empty_name(client):
     """Test /m1/validate with empty name (violates minLength: 1)"""
@@ -169,7 +162,6 @@ def test_validate_endpoint_invalid_data_empty_name(client):
     data = response.get_json()
     assert data['status'] == 'invalid'
     assert 'validation_error' in data
-
 
 def test_validate_endpoint_invalid_data_additional_properties(client):
     """Test /m1/validate with additional properties (not allowed)"""
@@ -192,7 +184,6 @@ def test_validate_endpoint_invalid_data_additional_properties(client):
     assert data['status'] == 'invalid'
     assert 'validation_error' in data
 
-
 def test_validate_endpoint_no_json(client):
     """Test /m1/validate with no JSON data"""
     response = client.post('/m1/validate')
@@ -203,7 +194,6 @@ def test_validate_endpoint_no_json(client):
     assert data['status'] == 'error'
     assert 'Request must contain JSON data' in data['error']
     assert data['module'] == 'harmonic_precision_analyzer_api'
-
 
 def test_validate_endpoint_empty_json(client):
     """Test /m1/validate with empty JSON"""
@@ -217,7 +207,6 @@ def test_validate_endpoint_empty_json(client):
     assert data['status'] == 'error'
     assert 'Empty or invalid JSON data' in data['error']
 
-
 def test_validate_endpoint_wrong_method(client):
     """Test that GET on /m1/validate returns 405"""
     response = client.get('/m1/validate')
@@ -228,7 +217,6 @@ def test_validate_endpoint_wrong_method(client):
     assert data['status'] == 'error'
     assert 'Method not allowed' in data['error']
 
-
 def test_schema_endpoint_wrong_method(client):
     """Test that POST on /m1/schema returns 405"""
     response = client.post('/m1/schema')
@@ -238,7 +226,6 @@ def test_schema_endpoint_wrong_method(client):
     data = response.get_json()
     assert data['status'] == 'error'
     assert 'Method not allowed' in data['error']
-
 
 if __name__ == '__main__':
     print("Running schema endpoint tests using Flask test_client")
