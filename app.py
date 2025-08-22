@@ -49,38 +49,35 @@ analyzer = HarmonicPrecisionAnalyzer()
 # Error handlers for standard HTTP errors
 @app.errorhandler(404)
 def not_found(error):
-    return json_error("Endpoint no encontrado", 404)
+    return json_error("Endpoint not found", 404)
 
 @app.errorhandler(405)
 def method_not_allowed(error):
-    return json_error("Método no permitido", 405)
+    return json_error("Method not allowed", 405)
 
 @app.errorhandler(413)
 @app.errorhandler(RequestEntityTooLarge)
 def too_large(error):
-    return json_error("Archivo demasiado grande", 413)
+    return json_error("File too large", 413)
 
 # Routes
 @app.route('/health', methods=['GET'])
 @app.route('/m1/health', methods=['GET'])
 def health():
     """Health check endpoint"""
-    return json_success({"status": "healthy", "module": "harmonic_precision_analyzer_api"})
+    return jsonify({"status":"success","health":"healthy","module":"harmonic_precision_analyzer"})
 
 @app.route('/m1/version', methods=['GET'])
 def version():
     """Version endpoint - hardened to never return 500"""
     try:
-        return json_success({
-            "version": "1.0.0",
-            "module": "harmonic_precision_analyzer_api"
-        })
+        return jsonify({"status":"success","version":"1.0.0","module":"harmonic_precision_analyzer"})
     except Exception:
         # Hardened fallback - should never fail
         return jsonify({
             "status": "success",
             "version": "1.0.0",
-            "module": "harmonic_precision_analyzer_api"
+            "module": "harmonic_precision_analyzer"
         }), 200
 
 @app.route('/m1/analyze', methods=['POST'])
@@ -89,18 +86,18 @@ def analyze():
     try:
         # Check if file is present
         if 'file' not in request.files:
-            return json_error("No se proporcionó archivo")
+            return json_error("No file provided")
         
         file = request.files['file']
         if file.filename == '':
-            return json_error("No se seleccionó archivo")
+            return json_error("No file selected")
         
         if not file:
-            return json_error("Archivo inválido")
+            return json_error("Invalid file")
         
         # Validate file extension
         if not file.filename.lower().endswith(('.xml', '.musicxml', '.mxl')):
-            return json_error("Tipo de archivo no soportado. Solo XML/MusicXML")
+            return json_error("Unsupported file type. Only XML/MusicXML supported")
         
         # Create secure temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xml') as temp_file:
@@ -108,17 +105,17 @@ def analyze():
             temp_path = Path(temp_file.name)
         
         try:
-            # Analyze the file
-            result = analyzer.analyze_xml(temp_path)
+            # Analyze the file using analyze_xml_precision
+            result = analyzer.analyze_xml_precision(temp_path)
             
             return json_success({
                 "analysis": result,
                 "filename": secure_filename(file.filename),
-                "module": "harmonic_precision_analyzer_api"
+                "module": "harmonic_precision_analyzer"
             })
         
         except Exception as e:
-            return json_error(f"Error durante análisis: {str(e)}")
+            return json_error(f"Analysis error: {str(e)}")
         
         finally:
             # Clean up temporary file
@@ -126,7 +123,7 @@ def analyze():
                 temp_path.unlink()
     
     except Exception as e:
-        return json_error(f"Error procesando archivo: {str(e)}")
+        return json_error(f"File processing error: {str(e)}")
 
 @app.route('/m1/schema', methods=['GET'])
 def get_schema():
@@ -187,11 +184,11 @@ def validate_json():
     try:
         # Check if JSON data is provided
         if not request.is_json:
-            return json_error('Petición debe contener JSON válido')
+            return json_error('Request must contain valid JSON')
         
         json_data = request.get_json()
         if json_data is None:
-            return json_error('Petición debe contener JSON válido')
+            return json_error('Request must contain valid JSON')
         
         # Load schema with fallbacks
         try:
@@ -232,17 +229,17 @@ def validate_json():
         # Validate JSON against schema
         try:
             validate(instance=json_data, schema=schema)
-            return json_success({"valid": True, "message": "JSON válido según schema"})
+            return json_success({"valid": True, "message": "Valid JSON according to schema"})
         
         except jsonschema.ValidationError as ve:
             # Collect all validation errors
             validator = jsonschema.Draft7Validator(schema)
             all_errors = [str(error) for error in validator.iter_errors(json_data)]
             
-            return json_error('JSON no válido según schema', 422, valid=False, validation_errors=all_errors if all_errors else [str(ve)])
+            return json_error('Invalid JSON according to schema', 422, valid=False, validation_errors=all_errors if all_errors else [str(ve)])
     
     except Exception as e:
-        return json_error(f'Error durante validación: {str(e)}', 500)
+        return json_error(f'Validation error: {str(e)}', 500)
 
 if __name__ == '__main__':
     # Development server configuration
