@@ -6,10 +6,13 @@ Exposes /m1/analyze endpoint for XML analysis
 """
 import os
 import tempfile
+import json
 from flask import Flask, request, jsonify
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 from harmonic_precision_analyzer import HarmonicPrecisionAnalyzer
+import jsonschema
+from jsonschema import validate
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -50,9 +53,106 @@ def m1_version():
         'endpoints': {
             'health': ['/health', '/m1/health'],
             'version': '/m1/version',
-            'analyze': '/m1/analyze'
+            'analyze': '/m1/analyze',
+            'schema': '/m1/schema',
+            'validate': '/m1/validate'
         }
     })
+
+@app.route('/m1/schema', methods=['GET'])
+def get_schema():
+    """Get M1 JSON Schema"""
+    try:
+        schema_path = os.path.join('docs', 'schema_m1.json')
+        with open(schema_path, 'r') as f:
+            schema = json.load(f)
+        return jsonify(schema)
+    except FileNotFoundError:
+        return jsonify({
+            'status': 'error',
+            'error': 'Schema file not found',
+            'module': 'harmonic_precision_analyzer_api'
+        }), 404
+    except json.JSONDecodeError:
+        return jsonify({
+            'status': 'error',
+            'error': 'Invalid schema file format',
+            'module': 'harmonic_precision_analyzer_api'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': f'Failed to load schema: {str(e)}',
+            'module': 'harmonic_precision_analyzer_api'
+        }), 500
+
+@app.route('/m1/validate', methods=['POST'])
+def validate_data():
+    """Validate JSON data against M1 schema"""
+    try:
+        # Check if request contains JSON
+        if not request.is_json:
+            return jsonify({
+                'status': 'error',
+                'error': 'Request must contain JSON data',
+                'module': 'harmonic_precision_analyzer_api'
+            }), 400
+        
+        data = request.get_json()
+        if data is None:
+            return jsonify({
+                'status': 'error',
+                'error': 'Empty or invalid JSON data',
+                'module': 'harmonic_precision_analyzer_api'
+            }), 400
+        
+        # Load schema
+        schema_path = os.path.join('docs', 'schema_m1.json')
+        try:
+            with open(schema_path, 'r') as f:
+                schema = json.load(f)
+        except FileNotFoundError:
+            return jsonify({
+                'status': 'error',
+                'error': 'Schema file not found',
+                'module': 'harmonic_precision_analyzer_api'
+            }), 500
+        except json.JSONDecodeError:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid schema file format',
+                'module': 'harmonic_precision_analyzer_api'
+            }), 500
+        
+        # Validate data against schema
+        try:
+            validate(instance=data, schema=schema)
+            return jsonify({
+                'status': 'valid',
+                'message': 'Data validates against M1 schema',
+                'module': 'harmonic_precision_analyzer_api'
+            })
+        except jsonschema.ValidationError as ve:
+            return jsonify({
+                'status': 'invalid',
+                'error': 'Data validation failed',
+                'validation_error': str(ve),
+                'module': 'harmonic_precision_analyzer_api'
+            }), 400
+        except jsonschema.SchemaError as se:
+            return jsonify({
+                'status': 'error',
+                'error': 'Schema validation error',
+                'schema_error': str(se),
+                'module': 'harmonic_precision_analyzer_api'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': f'Validation failed: {str(e)}',
+            'module': 'harmonic_precision_analyzer_api'
+        }), 500
 
 @app.route('/m1/analyze', methods=['POST'])
 def analyze_xml():
@@ -166,7 +266,7 @@ def not_found(e):
         'status': 'error',
         'error': 'Endpoint not found',
         'module': 'harmonic_precision_analyzer_api',
-        'available_endpoints': ['/health', '/m1/health', '/m1/version', '/m1/analyze']
+        'available_endpoints': ['/health', '/m1/health', '/m1/version', '/m1/analyze', '/m1/schema', '/m1/validate']
     }), 404
 
 @app.errorhandler(405)
@@ -189,6 +289,8 @@ if __name__ == '__main__':
     print(f"  GET  /m1/health - Health check (alias)")
     print(f"  GET  /m1/version - Version info")
     print(f"  POST /m1/analyze - XML analysis")
+    print(f"  GET  /m1/schema - JSON Schema")
+    print(f"  POST /m1/validate - JSON validation")
     print(f"")
     print(f"Running on port {port}")
     
