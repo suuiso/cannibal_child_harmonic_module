@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-Smoke tests for Harmonic Precision Analyzer API
-Tests basic functionality of /m1/analyze endpoint
+Smoke tests for Harmonic Precision Analyzer API using Flask test_client
+Tests basic functionality of /m1/analyze endpoint without network calls
 """
 import pytest
-import requests
 import json
-import os
 from io import BytesIO
+from app import app
 
-# Configuration
-API_BASE_URL = os.environ.get('API_BASE_URL', 'http://localhost:5000')
+
+@pytest.fixture
+def client():
+    """Create a test client for the Flask app"""
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
+
+
 SAMPLE_XML_CONTENT = '''<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <work>
@@ -49,56 +55,82 @@ SAMPLE_XML_CONTENT = '''<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>'''
 
-def test_health_endpoint():
+
+def test_health_endpoint(client):
     """Test that health endpoint is accessible"""
-    response = requests.get(f"{API_BASE_URL}/health")
+    response = client.get('/health')
     assert response.status_code == 200
     
-    data = response.json()
+    data = response.get_json()
     assert data['status'] == 'healthy'
     assert 'module' in data
     assert 'version' in data
 
-def test_analyze_endpoint_no_file():
+
+def test_m1_health_alias(client):
+    """Test that /m1/health alias works"""
+    response = client.get('/m1/health')
+    assert response.status_code == 200
+    
+    data = response.get_json()
+    assert data['status'] == 'healthy'
+    assert 'module' in data
+    assert 'version' in data
+
+
+def test_version_endpoint(client):
+    """Test version endpoint"""
+    response = client.get('/version')
+    assert response.status_code == 200
+    
+    data = response.get_json()
+    assert 'api_version' in data
+    assert 'module' in data
+
+
+def test_analyze_endpoint_no_file(client):
     """Test analyze endpoint returns error when no file provided"""
-    response = requests.post(f"{API_BASE_URL}/m1/analyze")
+    response = client.post('/m1/analyze')
     assert response.status_code == 400
     
-    data = response.json()
+    data = response.get_json()
     assert data['status'] == 'error'
     assert 'No file provided' in data['error']
 
-def test_analyze_endpoint_empty_file():
+
+def test_analyze_endpoint_empty_file(client):
     """Test analyze endpoint returns error for empty file"""
-    files = {'file': ('', BytesIO(b''), 'application/xml')}
-    response = requests.post(f"{API_BASE_URL}/m1/analyze", files=files)
+    data = {'file': (BytesIO(b''), '')}
+    response = client.post('/m1/analyze', data=data)
     assert response.status_code == 400
     
-    data = response.json()
+    data = response.get_json()
     assert data['status'] == 'error'
     assert 'No file selected' in data['error']
 
-def test_analyze_endpoint_invalid_file_type():
+
+def test_analyze_endpoint_invalid_file_type(client):
     """Test analyze endpoint returns error for invalid file type"""
-    files = {'file': ('test.txt', BytesIO(b'invalid content'), 'text/plain')}
-    response = requests.post(f"{API_BASE_URL}/m1/analyze", files=files)
+    data = {'file': (BytesIO(b'invalid content'), 'test.txt')}
+    response = client.post('/m1/analyze', data=data, content_type='multipart/form-data')
     assert response.status_code == 400
     
-    data = response.json()
+    data = response.get_json()
     assert data['status'] == 'error'
     assert 'File type not allowed' in data['error']
 
-def test_analyze_endpoint_valid_xml():
+
+def test_analyze_endpoint_valid_xml(client):
     """Test analyze endpoint with valid XML file"""
     xml_file = BytesIO(SAMPLE_XML_CONTENT.encode('utf-8'))
-    files = {'file': ('test_score.xml', xml_file, 'application/xml')}
+    data = {'file': (xml_file, 'test_score.xml')}
     
-    response = requests.post(f"{API_BASE_URL}/m1/analyze", files=files)
+    response = client.post('/m1/analyze', data=data, content_type='multipart/form-data')
     
     # Should not fail with basic XML
     assert response.status_code in [200, 500]  # 500 is acceptable for analysis errors
     
-    data = response.json()
+    data = response.get_json()
     
     if response.status_code == 200:
         # If successful, check response structure
@@ -111,38 +143,42 @@ def test_analyze_endpoint_valid_xml():
         assert data['status'] == 'error'
         assert 'module' in data
 
-def test_analyze_endpoint_with_xml_file_key():
+
+def test_analyze_endpoint_with_xml_file_key(client):
     """Test analyze endpoint using 'xml_file' key instead of 'file'"""
     xml_file = BytesIO(SAMPLE_XML_CONTENT.encode('utf-8'))
-    files = {'xml_file': ('test_score.xml', xml_file, 'application/xml')}
+    data = {'xml_file': (xml_file, 'test_score.xml')}
     
-    response = requests.post(f"{API_BASE_URL}/m1/analyze", files=files)
+    response = client.post('/m1/analyze', data=data, content_type='multipart/form-data')
     
     # Should not fail with basic XML
     assert response.status_code in [200, 500]  # 500 is acceptable for analysis errors
     
-    data = response.json()
+    data = response.get_json()
     assert 'status' in data  # Should have status field regardless
 
-def test_nonexistent_endpoint():
+
+def test_nonexistent_endpoint(client):
     """Test that nonexistent endpoints return 404"""
-    response = requests.get(f"{API_BASE_URL}/nonexistent")
+    response = client.get('/nonexistent')
     assert response.status_code == 404
     
-    data = response.json()
+    data = response.get_json()
     assert data['status'] == 'error'
     assert 'Endpoint not found' in data['error']
     assert 'available_endpoints' in data
 
-def test_wrong_method_on_analyze():
+
+def test_wrong_method_on_analyze(client):
     """Test that GET on analyze endpoint returns 405"""
-    response = requests.get(f"{API_BASE_URL}/m1/analyze")
+    response = client.get('/m1/analyze')
     assert response.status_code == 405
     
-    data = response.json()
+    data = response.get_json()
     assert data['status'] == 'error'
     assert 'Method not allowed' in data['error']
 
+
 if __name__ == '__main__':
-    print(f"Running smoke tests against {API_BASE_URL}")
+    print("Running smoke tests using Flask test_client (no network calls)")
     pytest.main([__file__, '-v'])
