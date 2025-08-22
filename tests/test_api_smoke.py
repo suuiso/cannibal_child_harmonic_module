@@ -5,7 +5,12 @@ Tests basic functionality of /m1/analyze endpoint without network calls
 """
 import pytest
 import json
+import sys
+import os
 from io import BytesIO
+
+# Add parent directory to path to import app module
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from app import app
 
 
@@ -80,11 +85,11 @@ def test_m1_health_alias(client):
 
 def test_version_endpoint(client):
     """Test version endpoint"""
-    response = client.get('/version')
+    response = client.get('/m1/version')
     assert response.status_code == 200
     
     data = response.get_json()
-    assert 'api_version' in data
+    assert 'version' in data
     assert 'module' in data
 
 
