@@ -30,6 +30,15 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+@app.errorhandler(413)
+def payload_too_large(e):
+    """Handle payload too large errors with consistent JSON format"""
+    return jsonify({
+        'status': 'error',
+        'error': 'Payload too large',
+        'max_mb': 10
+    }), 413
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -51,29 +60,114 @@ def m1_health_check():
 @app.route('/m1/version', methods=['GET'])
 def m1_version():
     """M1 Version endpoint"""
+    try:
+        from harmonic_precision_analyzer import __version__
+        analyzer_version = __version__
+    except ImportError:
+        analyzer_version = 'unknown'
+    
     return jsonify({
         'status': 'success',
-        'module': 'harmonic_precision_analyzer_api',
-        'version': '1.0.0',
-        'description': 'Harmonic Precision Analyzer - Modulo 1',
-        'endpoints': [
-            '/health',
-            '/m1/health',
-            '/m1/version',
-            '/m1/analyze',
-            '/m1/schema',
-            '/m1/validate'
-        ]
+        'api_version': '1.0.0',
+        'analyzer_version': analyzer_version,
+        'module': 'harmonic_precision_analyzer_api'
     })
+
+@app.route('/m1/analyze', methods=['POST'])
+def m1_analyze():
+    """M1 XML Analysis endpoint with robust error handling"""
+    try:
+        # Check if file part is present in request
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'error': 'File part missing'
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file was actually selected
+        if file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'error': 'No file selected'
+            }), 400
+        
+        # Check if file is empty (0 bytes)
+        if file.content_length == 0:
+            # For cases where content_length might not be set, read and check
+            file_content = file.read()
+            if len(file_content) == 0:
+                return jsonify({
+                    'status': 'error',
+                    'error': 'Empty file'
+                }), 400
+            # Reset file pointer after reading
+            file.seek(0)
+        
+        # Validate file extension
+        if not file.filename or not allowed_file(file.filename):
+            return jsonify({
+                'status': 'error',
+                'error': f'Invalid file type. Allowed extensions: {", ".join(ALLOWED_EXTENSIONS)}'
+            }), 400
+        
+        # Save uploaded file temporarily
+        filename = secure_filename(file.filename)
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'_{filename}') as tmp_file:
+            file.save(tmp_file.name)
+            temp_filepath = tmp_file.name
+        
+        try:
+            # Initialize analyzer and process file
+            analyzer = HarmonicPrecisionAnalyzer()
+            result = analyzer.analyze_xml(temp_filepath)
+            
+            # Clean up temp file
+            os.unlink(temp_filepath)
+            
+            return jsonify({
+                'status': 'success',
+                'filename': filename,
+                'analysis': result,
+                'module': 'harmonic_precision_analyzer_api'
+            })
+            
+        except Exception as analysis_error:
+            # Clean up temp file on error
+            if os.path.exists(temp_filepath):
+                os.unlink(temp_filepath)
+            
+            return jsonify({
+                'status': 'error',
+                'error': f'Analysis failed: {str(analysis_error)}',
+                'module': 'harmonic_precision_analyzer_api'
+            }), 500
+    
+    except RequestEntityTooLarge:
+        # This should be handled by the errorhandler, but include as fallback
+        return jsonify({
+            'status': 'error',
+            'error': 'Payload too large',
+            'max_mb': 10
+        }), 413
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': f'Unexpected error: {str(e)}',
+            'module': 'harmonic_precision_analyzer_api'
+        }), 500
 
 @app.route('/m1/schema', methods=['GET'])
 def m1_schema():
-    """Return the JSON schema for M1 requests"""
+    """M1 JSON Schema endpoint"""
     try:
         if not SCHEMA_PATH.exists():
             return jsonify({
                 'status': 'error',
-                'error': f'Schema file not found: {SCHEMA_PATH}',
+                'error': f'Schema file not found at {SCHEMA_PATH}',
                 'module': 'harmonic_precision_analyzer_api'
             }), 404
         
@@ -86,52 +180,76 @@ def m1_schema():
             'module': 'harmonic_precision_analyzer_api'
         })
     
+    except json.JSONDecodeError as e:
+        return jsonify({
+            'status': 'error',
+            'error': f'Invalid JSON in schema file: {str(e)}',
+            'module': 'harmonic_precision_analyzer_api'
+        }), 500
+    
     except Exception as e:
         return jsonify({
             'status': 'error',
-            'error': f'Failed to load schema: {str(e)}',
+            'error': f'Schema loading failed: {str(e)}',
             'module': 'harmonic_precision_analyzer_api'
         }), 500
 
 @app.route('/m1/validate', methods=['POST'])
 def m1_validate():
-    """Validate JSON against M1 schema"""
+    """M1 JSON Validation endpoint with robust error handling"""
     try:
+        # Check Content-Type and request.is_json
+        if not request.is_json or request.content_type != 'application/json':
+            return jsonify({
+                'status': 'error',
+                'error': 'Request must contain JSON data'
+            }), 400
+        
+        # Get JSON data
+        json_data = request.get_json()
+        
+        # Check for None or empty JSON
+        if json_data is None or json_data == {}:
+            return jsonify({
+                'status': 'error',
+                'error': 'Empty or invalid JSON data'
+            }), 400
+        
         # Load schema
         if not SCHEMA_PATH.exists():
             return jsonify({
                 'status': 'error',
-                'error': f'Schema file not found: {SCHEMA_PATH}',
+                'error': f'Schema file not found at {SCHEMA_PATH}',
                 'module': 'harmonic_precision_analyzer_api'
-            }), 404
+            }), 500
         
         with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
             schema = json.load(f)
         
-        # Get JSON data from request
-        if not request.is_json:
+        # Validate JSON against schema
+        try:
+            validate(instance=json_data, schema=schema)
+            return jsonify({
+                'status': 'success',
+                'valid': True
+            }), 200
+        
+        except jsonschema.ValidationError as ve:
+            errors = [str(ve)]
+            # Collect all validation errors if possible
+            validator = jsonschema.Draft7Validator(schema)
+            all_errors = [str(error) for error in validator.iter_errors(json_data)]
+            
             return jsonify({
                 'status': 'error',
-                'error': 'Request must be JSON',
-                'module': 'harmonic_precision_analyzer_api'
-            }), 400
-        
-        data = request.get_json()
-        
-        # Validate against schema
-        validate(instance=data, schema=schema)
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'JSON is valid according to M1 schema',
-            'module': 'harmonic_precision_analyzer_api'
-        })
+                'valid': False,
+                'errors': all_errors if all_errors else errors
+            }), 422
     
-    except jsonschema.exceptions.ValidationError as e:
+    except json.JSONDecodeError:
         return jsonify({
             'status': 'error',
-            'error': f'JSON validation failed: {str(e)}',
-            'module': 'harmonic_precision_analyzer_api'
+            'error': 'Empty or invalid JSON data'
         }), 400
     
     except Exception as e:
@@ -141,109 +259,9 @@ def m1_validate():
             'module': 'harmonic_precision_analyzer_api'
         }), 500
 
-@app.route('/m1/analyze', methods=['POST'])
-def m1_analyze():
-    """Main endpoint for XML harmonic analysis"""
-    
-    # Check if file is present in request
-    if 'file' not in request.files:
-        return jsonify({
-            'status': 'error',
-            'error': 'No file provided in request',
-            'module': 'harmonic_precision_analyzer_api'
-        }), 400
-    
-    file = request.files['file']
-    
-    # Check if filename is empty
-    if file.filename == '':
-        return jsonify({
-            'status': 'error',
-            'error': 'No file selected',
-            'module': 'harmonic_precision_analyzer_api'
-        }), 400
-    
-    # Check file extension
-    if not allowed_file(file.filename):
-        return jsonify({
-            'status': 'error',
-            'error': f'File type not allowed. Accepted types: {", ".join(ALLOWED_EXTENSIONS)}',
-            'module': 'harmonic_precision_analyzer_api'
-        }), 400
-    
-    try:
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file.filename.rsplit(".", 1)[1].lower()}') as temp_file:
-            filename = secure_filename(file.filename)
-            file.save(temp_file.name)
-            temp_file_path = temp_file.name
-        
-        # Initialize analyzer
-        analyzer = HarmonicPrecisionAnalyzer()
-        
-        # Perform analysis
-        result = analyzer.analyze_file(temp_file_path)
-        
-        # Clean up temporary file
-        try:
-            os.unlink(temp_file_path)
-        except OSError:
-            pass
-        
-        # Return result
-        return jsonify({
-            'status': 'success',
-            'filename': filename,
-            'analysis': result,
-            'module': 'harmonic_precision_analyzer_api'
-        })
-    
-    except Exception as e:
-        # Clean up temporary file if it exists
-        try:
-            if 'temp_file_path' in locals():
-                os.unlink(temp_file_path)
-        except OSError:
-            pass
-        
-        return jsonify({
-            'status': 'error',
-            'error': f'Analysis failed: {str(e)}',
-            'module': 'harmonic_precision_analyzer_api'
-        }), 500
-
-@app.errorhandler(RequestEntityTooLarge)
-@app.errorhandler(413)
-def request_entity_too_large(e):
-    """Handle file too large error (413)"""
-    return jsonify({
-        'status': 'error',
-        'error': 'File too large. Maximum size: 10MB',
-        'module': 'harmonic_precision_analyzer_api'
-    }), 413
-
-@app.errorhandler(404)
-def not_found(e):
-    """Handle 404 errors"""
-    return jsonify({
-        'status': 'error',
-        'error': 'Endpoint not found',
-        'module': 'harmonic_precision_analyzer_api',
-        'available_endpoints': ['/health', '/m1/health', '/m1/version', '/m1/analyze', '/m1/schema', '/m1/validate']
-    }), 404
-
-@app.errorhandler(405)
-def method_not_allowed(e):
-    """Handle method not allowed errors"""
-    return jsonify({
-        'status': 'error',
-        'error': 'Method not allowed',
-        'module': 'harmonic_precision_analyzer_api'
-    }), 405
-
-@app.get('/debug/ls')
+@app.route('/debug/ls', methods=['GET'])
 def debug_ls():
-    """Debug endpoint to list contents of base directory and docs directory"""
+    """Debug endpoint to list directory contents"""
     try:
         base_path = Path(__file__).resolve().parent
         docs_path = base_path / 'docs'
