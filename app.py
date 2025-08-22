@@ -7,6 +7,7 @@ Exposes /m1/analyze endpoint for XML analysis
 import os
 import tempfile
 from flask import Flask, request, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 from harmonic_precision_analyzer import HarmonicPrecisionAnalyzer
 
@@ -60,29 +61,41 @@ def analyze_xml():
     
     Expects:
     - POST request with multipart/form-data
-    - File uploaded with key 'file' or 'xml_file'
+    - File uploaded with key 'file'
     
     Returns:
     - JSON with analysis results
     """
     try:
         # Check if file is in request
-        if 'file' not in request.files and 'xml_file' not in request.files:
+        if 'file' not in request.files:
             return jsonify({
                 'status': 'error',
-                'error': 'No file provided. Use key "file" or "xml_file" in form-data',
+                'error': 'No file provided. Use key "file" in form-data',
                 'module': 'harmonic_precision_analyzer_api'
             }), 400
         
         # Get file from request
-        file = request.files.get('file') or request.files.get('xml_file')
+        file = request.files['file']
         
+        # Check if filename is empty
         if file.filename == '':
             return jsonify({
                 'status': 'error', 
                 'error': 'No file selected',
                 'module': 'harmonic_precision_analyzer_api'
             }), 400
+        
+        # Check if file is empty (0 bytes)
+        file.seek(0)  # Reset file pointer to beginning
+        first_byte = file.read(1)
+        if not first_byte:
+            return jsonify({
+                'status': 'error',
+                'error': 'Empty file (0 bytes)',
+                'module': 'harmonic_precision_analyzer_api'
+            }), 400
+        file.seek(0)  # Reset file pointer for further processing
         
         if not allowed_file(file.filename):
             return jsonify({
@@ -108,7 +121,7 @@ def analyze_xml():
             result['api_metadata'] = {
                 'endpoint': '/m1/analyze',
                 'filename': filename,
-                'file_size': len(file.read()),
+                'file_size': os.path.getsize(temp_path),
                 'api_version': '1.0.0'
             }
             
@@ -136,9 +149,10 @@ def analyze_xml():
             'module': 'harmonic_precision_analyzer_api'
         }), 500
 
+@app.errorhandler(RequestEntityTooLarge)
 @app.errorhandler(413)
-def too_large(e):
-    """Handle file too large error"""
+def request_entity_too_large(e):
+    """Handle file too large error (413)"""
     return jsonify({
         'status': 'error',
         'error': 'File too large. Maximum size: 10MB',
