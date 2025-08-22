@@ -3,3 +3,4 @@ music21==9.1.0
 mido==1.3.2
 numpy==1.24.3
 pytest==8.2.0
+jsonschema==4.20.0
