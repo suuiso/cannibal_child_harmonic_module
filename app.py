@@ -259,55 +259,6 @@ def m1_validate():
             'module': 'harmonic_precision_analyzer_api'
         }), 500
 
-@app.route('/debug/ls', methods=['GET'])
-def debug_ls():
-    """Debug endpoint to list directory contents"""
-    try:
-        base_path = Path(__file__).resolve().parent
-        docs_path = base_path / 'docs'
-        
-        base_contents = []
-        docs_contents = []
-        
-        # List base directory contents
-        if base_path.exists():
-            for item in sorted(base_path.iterdir()):
-                item_info = {
-                    'name': item.name,
-                    'type': 'directory' if item.is_dir() else 'file',
-                    'size': item.stat().st_size if item.is_file() else None
-                }
-                base_contents.append(item_info)
-        
-        # List docs directory contents
-        if docs_path.exists():
-            for item in sorted(docs_path.iterdir()):
-                item_info = {
-                    'name': item.name,
-                    'type': 'directory' if item.is_dir() else 'file',
-                    'size': item.stat().st_size if item.is_file() else None
-                }
-                docs_contents.append(item_info)
-        
-        return jsonify({
-            'status': 'success',
-            'base_path': str(base_path),
-            'base_contents': base_contents,
-            'docs_path': str(docs_path),
-            'docs_exists': docs_path.exists(),
-            'docs_contents': docs_contents,
-            'schema_path': str(Path(__file__).resolve().parent / 'docs' / 'schema_m1.json'),
-            'schema_exists': (Path(__file__).resolve().parent / 'docs' / 'schema_m1.json').exists(),
-            'module': 'harmonic_precision_analyzer_api'
-        })
-    
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': f'Debug listing failed: {str(e)}',
-            'module': 'harmonic_precision_analyzer_api'
-        }), 500
-
 if __name__ == '__main__':
     # Development server configuration
     port = int(os.environ.get('PORT', 5000))
@@ -321,7 +272,6 @@ if __name__ == '__main__':
     print(f"  POST /m1/analyze - XML analysis")
     print(f"  GET  /m1/schema - JSON Schema")
     print(f"  POST /m1/validate - JSON validation")
-    print(f"  GET  /debug/ls - Debug directory listing")
     print(f"")
     print(f"Running on port {port}")
     
