@@ -51,19 +51,15 @@ def test_schema_endpoint_success(client):
 def test_validate_endpoint_valid_data(client):
     """Test /m1/validate with valid data according to schema"""
     # Sample valid data that should pass validation
-    sample_data = {
-        "version": "1.0.0",
-        "data": {
-            "metadata": {
-                "title": "Test Score",
-                "composer": "Test Composer"
-            },
-            "measures": []
+    valid_data = {
+        'version': '1.0.0',
+        'data': {
+            'test': 'value'
         }
     }
     
     response = client.post('/m1/validate', 
-                          json=sample_data, 
+                          json=valid_data, 
                           content_type='application/json')
     
     assert response.status_code == 200
@@ -72,11 +68,12 @@ def test_validate_endpoint_valid_data(client):
     assert data['valid'] == True
 
 def test_validate_endpoint_invalid_data(client):
-    """Test /m1/validate with invalid data"""
-    # Sample invalid data (missing required fields)
+    """Test /m1/validate with invalid data (missing required fields)"""
+    # Data missing required 'version' field
     invalid_data = {
-        "version": "1.0.0"
-        # Missing "data" field which is required
+        'data': {
+            'test': 'value'
+        }
     }
     
     response = client.post('/m1/validate', 
@@ -123,7 +120,7 @@ def test_validate_endpoint_wrong_method(client):
     assert response.status_code == 405
     data = response.get_json()
     assert data['status'] == 'error'
-    assert isinstance(data['error'], str)
+    assert data['error'] == 'Method Not Allowed'
 
 def test_schema_endpoint_wrong_method(client):
     """Test that POST on /m1/schema returns 405"""
@@ -132,7 +129,7 @@ def test_schema_endpoint_wrong_method(client):
     assert response.status_code == 405
     data = response.get_json()
     assert data['status'] == 'error'
-    assert isinstance(data['error'], str)
+    assert data['error'] == 'Method Not Allowed'
 
 if __name__ == '__main__':
     print("Running schema endpoint tests using Flask test_client")
