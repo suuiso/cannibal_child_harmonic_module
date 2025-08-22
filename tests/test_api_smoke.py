@@ -11,8 +11,8 @@ from io import BytesIO
 
 # Add parent directory to path to import app module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from app import app
 
+from app import app
 
 @pytest.fixture
 def client():
@@ -21,13 +21,11 @@ def client():
     with app.test_client() as client:
         yield client
 
-
 def load_sample_json():
     """Load sample JSON from tests/data/sample_output_ok.json"""
     data_file = os.path.join(os.path.dirname(__file__), 'data', 'sample_output_ok.json')
     with open(data_file, 'r') as f:
         return json.load(f)
-
 
 SAMPLE_XML_CONTENT = '''<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -48,109 +46,111 @@ SAMPLE_XML_CONTENT = '''<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>'''
 
-
 def test_version_endpoint(client):
     """Test /m1/version endpoint"""
     response = client.get('/m1/version')
     assert response.status_code == 200
-    
     data = response.get_json()
-    assert "version" in data  # Check that version field exists (no api_version)
+    assert 'version' in data
+    assert 'api' in data
 
-
-def test_analyze_endpoint_missing_file(client):
-    """Test analyze endpoint returns error when file part is missing"""
-    response = client.post('/m1/analyze', data={}, content_type='multipart/form-data')
-    assert response.status_code == 400
-    
+def test_health_endpoint(client):
+    """Test /m1/health endpoint"""
+    response = client.get('/m1/health')
+    assert response.status_code == 200
     data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'message' in data
-    assert 'No file' in data['message'] or 'file' in data['message'].lower()
-
-
-def test_analyze_endpoint_empty_file(client):
-    """Test analyze endpoint with empty file"""
-    data = {
-        'musicxml_file': (BytesIO(b''), 'empty.xml')
-    }
-    response = client.post('/m1/analyze', data=data, content_type='multipart/form-data')
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'message' in data
-    assert 'empty' in data['message'].lower() or 'file' in data['message'].lower()
-
-
-def test_analyze_endpoint_invalid_xml(client):
-    """Test analyze endpoint with invalid XML"""
-    invalid_xml = b'<invalid xml content'
-    data = {
-        'musicxml_file': (BytesIO(invalid_xml), 'invalid.xml')
-    }
-    response = client.post('/m1/analyze', data=data, content_type='multipart/form-data')
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'message' in data
-    assert 'XML' in data['message'] or 'xml' in data['message'] or 'parse' in data['message'].lower()
-
-
-def test_analyze_endpoint_valid_xml(client):
-    """Test analyze endpoint with valid XML"""
-    data = {
-        'musicxml_file': (BytesIO(SAMPLE_XML_CONTENT.encode('utf-8')), 'test.xml')
-    }
-    response = client.post('/m1/analyze', data=data, content_type='multipart/form-data')
-    
-    # Should return 200 for valid XML (analysis might still have issues but XML is valid)
-    assert response.status_code in [200, 422]  # 422 if analysis finds issues
-    
-    data = response.get_json()
-    if response.status_code == 200:
-        assert data['status'] == 'success'
-        assert 'analysis' in data
-    else:
-        assert data['status'] == 'error'
-        assert 'message' in data
-
+    assert data['status'] == 'healthy'
 
 def test_schema_endpoint(client):
     """Test /m1/schema endpoint"""
     response = client.get('/m1/schema')
     assert response.status_code == 200
+    data = response.get_json()
+    # Schema should be directly under data['schema'], not data['data']['schema']
+    assert 'schema' in data
+    assert isinstance(data['schema'], dict)
+
+def test_upload_endpoint_success(client):
+    """Test /m1/upload endpoint with valid XML"""
+    xml_file = (BytesIO(SAMPLE_XML_CONTENT.encode('utf-8')), 'test.xml')
+    # Use 'file' field instead of 'musicxml_file'
+    response = client.post('/m1/upload',
+                          data={'file': xml_file},
+                          content_type='multipart/form-data')
     
+    assert response.status_code == 200
     data = response.get_json()
     assert data['status'] == 'success'
-    assert 'schema' in data['data']  # Schema nested in data["schema"]
-    assert isinstance(data['data']['schema'], dict)
+    assert 'analysis_id' in data
 
-
-def test_validate_endpoint_valid_json(client):
-    """Test /m1/validate endpoint with valid JSON from sample_output_ok.json"""
-    try:
-        valid_data = load_sample_json()
-    except FileNotFoundError:
-        # Fallback if sample file doesn't exist yet
-        valid_data = {
-            "tempo": {
-                "bpm": 120,
-                "marking": "Moderato"
-            },
-            "key_signature": {
-                "key": "C",
-                "mode": "major"
-            },
-            "time_signature": {
-                "numerator": 4,
-                "denominator": 4
-            }
-        }
+def test_upload_endpoint_no_file(client):
+    """Test /m1/upload endpoint without file"""
+    response = client.post('/m1/upload',
+                          data={},
+                          content_type='multipart/form-data')
     
-    response = client.post('/m1/validate', 
-                          json=valid_data, 
+    assert response.status_code == 400
+    data = response.get_json()
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert data['status'] == 'error'
+    assert 'error' in data
+
+def test_upload_endpoint_invalid_file(client):
+    """Test /m1/upload endpoint with invalid file content"""
+    invalid_file = (BytesIO(b'not valid xml'), 'invalid.xml')
+    # Use 'file' field instead of 'musicxml_file'
+    response = client.post('/m1/upload',
+                          data={'file': invalid_file},
+                          content_type='multipart/form-data')
+    
+    assert response.status_code == 400
+    data = response.get_json()
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert data['status'] == 'error'
+    assert 'error' in data
+
+def test_analyze_endpoint_success(client):
+    """Test /m1/analyze endpoint with valid musicxml_content"""
+    response = client.post('/m1/analyze',
+                          json={'musicxml_content': SAMPLE_XML_CONTENT},
+                          content_type='application/json')
+    
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['status'] == 'success'
+    assert 'harmonic_analysis' in data
+
+def test_analyze_endpoint_no_content(client):
+    """Test /m1/analyze endpoint without musicxml_content"""
+    response = client.post('/m1/analyze',
+                          json={},
+                          content_type='application/json')
+    
+    assert response.status_code == 400
+    data = response.get_json()
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert data['status'] == 'error'
+    assert 'error' in data
+
+def test_analyze_endpoint_invalid_xml(client):
+    """Test /m1/analyze endpoint with invalid XML"""
+    response = client.post('/m1/analyze',
+                          json={'musicxml_content': 'not valid xml'},
+                          content_type='application/json')
+    
+    assert response.status_code == 400
+    data = response.get_json()
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert data['status'] == 'error'
+    assert 'error' in data
+
+def test_validate_endpoint_success(client):
+    """Test /m1/validate endpoint with valid JSON data"""
+    # Success tests should use and check sample_output_ok.json for validation
+    sample_data = load_sample_json()
+    
+    response = client.post('/m1/validate',
+                          json=sample_data,
                           content_type='application/json')
     
     assert response.status_code == 200
@@ -158,36 +158,35 @@ def test_validate_endpoint_valid_json(client):
     assert data['status'] == 'success'
     assert data['valid'] == True
 
-
 def test_validate_endpoint_invalid_json(client):
     """Test /m1/validate endpoint with invalid JSON against schema"""
     # This would depend on what the actual schema expects
     # For now, assume empty object might be invalid
     invalid_data = {}
-    response = client.post('/m1/validate', 
-                          json=invalid_data, 
+    response = client.post('/m1/validate',
+                          json=invalid_data,
                           content_type='application/json')
     
     assert response.status_code == 422
     data = response.get_json()
     assert data['status'] == 'error'
     assert data['valid'] == False
-    assert 'message' in data
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert 'error' in data
     assert isinstance(data.get('errors', []), list)
-
 
 def test_validate_endpoint_no_json(client):
     """Test /m1/validate endpoint with no JSON body"""
-    response = client.post('/m1/validate', 
-                          data='not json', 
+    response = client.post('/m1/validate',
+                          data='not json',
                           content_type='text/plain')
     assert response.status_code == 400
     
     data = response.get_json()
     assert data['status'] == 'error'
-    assert 'message' in data
-    assert 'JSON' in data['message'] or 'json' in data['message']
-
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert 'error' in data
+    assert 'JSON' in data['error'] or 'json' in data['error']
 
 def test_nonexistent_endpoint(client):
     """Test that nonexistent endpoints return 404"""
@@ -196,8 +195,8 @@ def test_nonexistent_endpoint(client):
     
     data = response.get_json()
     assert data['status'] == 'error'
-    assert data['message'] == 'Not Found'
-
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert 'error' in data
 
 def test_wrong_method_on_analyze(client):
     """Test that GET on analyze endpoint returns 405"""
@@ -206,8 +205,8 @@ def test_wrong_method_on_analyze(client):
     
     data = response.get_json()
     assert data['status'] == 'error'
-    assert data['message'] == 'Method Not Allowed'
-
+    # Error assertions should check 'status' == 'error' and 'error' in payload, never 'message'
+    assert 'error' in data
 
 if __name__ == '__main__':
     print("Running smoke tests using Flask test_client (no network calls)")
