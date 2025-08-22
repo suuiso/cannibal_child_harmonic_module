@@ -2,10 +2,8 @@
 """
 Flask API for Harmonic Precision Analyzer
 Modulo 1 - Análisis Armónico de Cannibal Child (XML/MIDI/Partituras)
-
 Exposes /m1/analyze endpoint for XML analysis
 """
-
 import os
 import tempfile
 from flask import Flask, request, jsonify
@@ -14,7 +12,7 @@ from harmonic_precision_analyzer import HarmonicPrecisionAnalyzer
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file size
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'xml', 'gp', 'gpx'}
@@ -31,6 +29,28 @@ def health_check():
         'status': 'healthy',
         'module': 'harmonic_precision_analyzer_api',
         'version': '1.0.0'
+    })
+
+@app.route('/m1/health', methods=['GET'])
+def m1_health_check():
+    """M1 Health check endpoint (alias for /health)"""
+    return jsonify({
+        'status': 'healthy',
+        'module': 'harmonic_precision_analyzer_api',
+        'version': '1.0.0'
+    })
+
+@app.route('/m1/version', methods=['GET'])
+def m1_version():
+    """M1 Version endpoint"""
+    return jsonify({
+        'version': '1.0.0',
+        'module': 'harmonic_precision_analyzer_api',
+        'endpoints': {
+            'health': ['/health', '/m1/health'],
+            'version': '/m1/version',
+            'analyze': '/m1/analyze'
+        }
     })
 
 @app.route('/m1/analyze', methods=['POST'])
@@ -121,7 +141,7 @@ def too_large(e):
     """Handle file too large error"""
     return jsonify({
         'status': 'error',
-        'error': 'File too large. Maximum size: 16MB',
+        'error': 'File too large. Maximum size: 10MB',
         'module': 'harmonic_precision_analyzer_api'
     }), 413
 
@@ -132,7 +152,7 @@ def not_found(e):
         'status': 'error',
         'error': 'Endpoint not found',
         'module': 'harmonic_precision_analyzer_api',
-        'available_endpoints': ['/health', '/m1/analyze']
+        'available_endpoints': ['/health', '/m1/health', '/m1/version', '/m1/analyze']
     }), 404
 
 @app.errorhandler(405)
@@ -152,6 +172,8 @@ if __name__ == '__main__':
     print(f"Starting Harmonic Precision Analyzer API...")
     print(f"Available endpoints:")
     print(f"  GET  /health - Health check")
+    print(f"  GET  /m1/health - Health check (alias)")
+    print(f"  GET  /m1/version - Version info")
     print(f"  POST /m1/analyze - XML analysis")
     print(f"")
     print(f"Running on port {port}")
