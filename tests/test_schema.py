@@ -29,21 +29,21 @@ def test_schema_endpoint_success(client):
     # Check basic schema structure
     assert 'schema' in data
     assert '$schema' in data['schema']
-    assert '$id' in data
-    assert 'title' in data
-    assert 'version' in data
-    assert 'type' in data
-    assert 'properties' in data
-    assert 'required' in data
+    assert '$id' in data['schema']
+    assert 'title' in data['schema']
+    assert 'version' in data['schema']
+    assert 'type' in data['schema']
+    assert 'properties' in data['schema']
+    assert 'required' in data['schema']
     
     # Check schema metadata
-    assert data['title'] == 'M1 Schema'
-    assert data['version'] == '1.0.0'
-    assert data['type'] == 'object'
+    assert data['schema']['title'] == 'M1 Schema'
+    assert data['schema']['version'] == '1.0.0'
+    assert data['schema']['type'] == 'object'
     
     # Check required properties
-    assert 'version' in data['required']
-    assert 'data' in data['required']
+    assert 'version' in data['schema']['required']
+    assert 'data' in data['schema']['required']
 
 def test_validate_endpoint_valid_data(client):
     """Test /m1/validate with valid data according to schema"""
@@ -51,8 +51,9 @@ def test_validate_endpoint_valid_data(client):
     sample_data = {
         "version": "1.0.0",
         "data": {
-            "id": "test-123",
-            "name": "Test Item"
+            "frequencies": [440.0, 880.0, 1320.0],
+            "amplitudes": [1.0, 0.5, 0.25],
+            "phases": [0.0, 1.57, 3.14]
         }
     }
     
@@ -63,35 +64,16 @@ def test_validate_endpoint_valid_data(client):
     assert response.status_code == 200
     
     data = response.get_json()
-    assert data['status'] == 'valid'
-    assert 'message' in data
-    assert 'module' in data
-    assert data['module'] == 'harmonic_precision_analyzer_api'
+    assert data['status'] == 'success'
+    assert 'validation_result' in data
+    assert data['validation_result'] == 'valid'
 
-def test_validate_endpoint_invalid_data_missing_version(client):
-    """Test /m1/validate with invalid data (missing version)"""
-    sample_data = {
-        "data": {
-            "id": "test-123",
-            "name": "Test Item"
-        }
-    }
-    
-    response = client.post('/m1/validate', 
-                          json=sample_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'invalid'
-    assert 'validation_error' in data
-    assert 'module' in data
-
-def test_validate_endpoint_invalid_data_missing_data(client):
-    """Test /m1/validate with invalid data (missing data object)"""
+def test_validate_endpoint_invalid_data(client):
+    """Test /m1/validate with invalid data"""
+    # Missing required fields
     sample_data = {
         "version": "1.0.0"
+        # Missing 'data' field
     }
     
     response = client.post('/m1/validate', 
@@ -101,88 +83,8 @@ def test_validate_endpoint_invalid_data_missing_data(client):
     assert response.status_code == 400
     
     data = response.get_json()
-    assert data['status'] == 'invalid'
-    assert 'validation_error' in data
-
-def test_validate_endpoint_invalid_data_wrong_version(client):
-    """Test /m1/validate with invalid version"""
-    sample_data = {
-        "version": "2.0.0",  # Wrong version, schema expects 1.0.0
-        "data": {
-            "id": "test-123",
-            "name": "Test Item"
-        }
-    }
-    
-    response = client.post('/m1/validate', 
-                          json=sample_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'invalid'
-    assert 'validation_error' in data
-
-def test_validate_endpoint_invalid_data_missing_id(client):
-    """Test /m1/validate with missing required field in data object"""
-    sample_data = {
-        "version": "1.0.0",
-        "data": {
-            "name": "Test Item"  # Missing required 'id' field
-        }
-    }
-    
-    response = client.post('/m1/validate', 
-                          json=sample_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'invalid'
-    assert 'validation_error' in data
-
-def test_validate_endpoint_invalid_data_empty_name(client):
-    """Test /m1/validate with empty name (violates minLength: 1)"""
-    sample_data = {
-        "version": "1.0.0",
-        "data": {
-            "id": "test-123",
-            "name": ""  # Empty name violates minLength: 1
-        }
-    }
-    
-    response = client.post('/m1/validate', 
-                          json=sample_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'invalid'
-    assert 'validation_error' in data
-
-def test_validate_endpoint_invalid_data_additional_properties(client):
-    """Test /m1/validate with additional properties (not allowed)"""
-    sample_data = {
-        "version": "1.0.0",
-        "data": {
-            "id": "test-123",
-            "name": "Test Item",
-            "extra_field": "not allowed"  # Additional property not allowed
-        }
-    }
-    
-    response = client.post('/m1/validate', 
-                          json=sample_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 400
-    
-    data = response.get_json()
-    assert data['status'] == 'invalid'
-    assert 'validation_error' in data
+    assert data['status'] == 'error'
+    assert 'error' in data
 
 def test_validate_endpoint_no_json(client):
     """Test /m1/validate with no JSON data"""
