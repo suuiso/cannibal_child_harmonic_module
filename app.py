@@ -65,19 +65,20 @@ def too_large(error):
 @app.route('/m1/health', methods=['GET'])
 def health():
     """Health check endpoint"""
-    return jsonify({"status":"success","health":"healthy","module":"harmonic_precision_analyzer"})
+    return jsonify({"status":"success","health":"healthy","module":"harmonic_precision_analyzer","version":"1.0.0"})
 
 @app.route('/m1/version', methods=['GET'])
 def version():
     """Version endpoint - hardened to never return 500"""
     try:
-        return jsonify({"status":"success","version":"1.0.0","module":"harmonic_precision_analyzer"})
+        return jsonify({"status":"success","version":"1.0.0","module":"harmonic_precision_analyzer","endpoint":"m1"})
     except Exception:
         # Hardened fallback - should never fail
         return jsonify({
             "status": "success",
             "version": "1.0.0",
-            "module": "harmonic_precision_analyzer"
+            "module": "harmonic_precision_analyzer",
+            "endpoint": "m1"
         }), 200
 
 @app.route('/m1/analyze', methods=['POST'])
@@ -97,7 +98,7 @@ def analyze():
         
         # Validate file extension
         if not file.filename.lower().endswith(('.xml', '.musicxml', '.mxl')):
-            return json_error("Unsupported file type. Only XML/MusicXML supported")
+            return json_error("Invalid file type. Only XML, MusicXML, and MXL files are allowed.")
         
         # Create secure temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xml') as temp_file:
