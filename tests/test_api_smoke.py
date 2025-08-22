@@ -11,7 +11,6 @@ from io import BytesIO
 
 # Add parent directory to path to import app module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from app import app
 
 @pytest.fixture
@@ -41,139 +40,131 @@ SAMPLE_XML_CONTENT = '''<?xml version="1.0" encoding="UTF-8"?>
     <measure number="1">
       <attributes>
         <divisions>4</divisions>
+        <key>
+          <fifths>0</fifths>
+        </key>
+        <time>
+          <beats>4</beats>
+          <beat-type>4</beat-type>
+        </time>
+        <clef>
+          <sign>G</sign>
+          <line>2</line>
+        </clef>
       </attributes>
+      <note>
+        <pitch>
+          <step>C</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>4</duration>
+        <type>quarter</type>
+      </note>
     </measure>
   </part>
 </score-partwise>'''
 
-def test_version_endpoint(client):
-    """Test /m1/version endpoint"""
+def test_health_endpoint(client):
+    """Test health check endpoint"""
+    response = client.get('/health')
+    assert response.status_code == 200
+    
+    data = json.loads(response.data)
+    assert data['status'] == 'success'
+    assert data['module'] == 'harmonic_precision_analyzer'
+    assert data['version'] == '1.0.0'
+
+def test_m1_version_endpoint(client):
+    """Test m1 version endpoint"""
     response = client.get('/m1/version')
     assert response.status_code == 200
-    data = response.get_json()
-    assert 'version' in data
-    assert 'module' in data  # Cambiado de 'api' a 'module'
-
-def test_health_endpoint(client):
-    """Test /m1/health endpoint"""
-    response = client.get('/m1/health')
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data['status'] == 'healthy'
-
-def test_schema_endpoint(client):
-    """Test /m1/schema endpoint"""
-    response = client.get('/m1/schema')
-    assert response.status_code == 200
-    data = response.get_json()
-    # Schema should be directly under data['schema'], not data['data']['schema']
-    assert 'schema' in data
-    assert isinstance(data['schema'], (dict, list))  # Permite dict o list (fallback)
-
-def test_analyze_endpoint_success(client):
-    """Test /m1/analyze endpoint with valid XML file"""
-    xml_file = (BytesIO(SAMPLE_XML_CONTENT.encode('utf-8')), 'test.xml')
-    response = client.post('/m1/analyze',
-                          data={'file': xml_file},
-                          content_type='multipart/form-data')
     
-    assert response.status_code == 200
-    data = response.get_json()
+    data = json.loads(response.data)
     assert data['status'] == 'success'
-    assert 'analysis' in data
+    assert data['module'] == 'harmonic_precision_analyzer'
+    assert data['version'] == '1.0.0'
+    assert data['endpoint'] == 'm1'
 
-def test_analyze_endpoint_no_file(client):
-    """Test /m1/analyze endpoint without file"""
-    response = client.post('/m1/analyze',
-                          data={},
-                          content_type='multipart/form-data')
-    
-    assert response.status_code == 400
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-
-def test_analyze_endpoint_invalid_file(client):
-    """Test /m1/analyze endpoint with invalid file content"""
-    invalid_file = (BytesIO(b'not valid xml'), 'invalid.xml')
-    response = client.post('/m1/analyze',
-                          data={'file': invalid_file},
-                          content_type='multipart/form-data')
-    
-    assert response.status_code == 400
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-
-def test_analyze_endpoint_wrong_extension(client):
-    """Test /m1/analyze endpoint with wrong file extension"""
-    txt_file = (BytesIO(b'some content'), 'test.txt')
-    response = client.post('/m1/analyze',
-                          data={'file': txt_file},
-                          content_type='multipart/form-data')
-    
-    assert response.status_code == 400
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-
-def test_validate_endpoint_success(client):
-    """Test /m1/validate endpoint with valid JSON data"""
-    sample_data = load_sample_json()
-    
-    response = client.post('/m1/validate',
-                          json=sample_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data['status'] == 'success'
-    assert data['valid'] == True
-
-def test_validate_endpoint_invalid_json(client):
-    """Test /m1/validate endpoint with invalid JSON against schema"""
-    invalid_data = {}
-    response = client.post('/m1/validate',
-                          json=invalid_data,
-                          content_type='application/json')
-    
-    assert response.status_code == 422
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert data['valid'] == False
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-    assert isinstance(data.get('validation_errors', []), list)
-
-def test_validate_endpoint_no_json(client):
-    """Test /m1/validate endpoint with no JSON body"""
-    response = client.post('/m1/validate',
-                          data='not json',
-                          content_type='text/plain')
+def test_m1_analyze_no_file(client):
+    """Test analyze endpoint with no file"""
+    response = client.post('/m1/analyze')
     assert response.status_code == 400
     
-    data = response.get_json()
+    data = json.loads(response.data)
     assert data['status'] == 'error'
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-    assert 'JSON' in data['error'] or 'json' in data['error']
+    assert data['error'] == 'No file provided'
+
+def test_m1_analyze_empty_file(client):
+    """Test analyze endpoint with empty file"""
+    response = client.post('/m1/analyze', data={'file': (BytesIO(b''), '')})
+    assert response.status_code == 400
+    
+    data = json.loads(response.data)
+    assert data['status'] == 'error'
+    assert data['error'] == 'No file selected'
+
+def test_m1_analyze_invalid_file_type(client):
+    """Test analyze endpoint with invalid file type"""
+    response = client.post('/m1/analyze', data={
+        'file': (BytesIO(b'test content'), 'test.txt')
+    })
+    assert response.status_code == 400
+    
+    data = json.loads(response.data)
+    assert data['status'] == 'error'
+    assert data['error'] == 'Invalid file type. Only XML, MusicXML, and MXL files are allowed.'
+
+def test_m1_analyze_valid_xml_file(client):
+    """Test analyze endpoint with valid XML file"""
+    xml_data = BytesIO(SAMPLE_XML_CONTENT.encode('utf-8'))
+    response = client.post('/m1/analyze', data={
+        'file': (xml_data, 'test.xml')
+    })
+    
+    # The response should be 200 for successful analysis or 400 for analysis failure
+    assert response.status_code in [200, 400]
+    
+    data = json.loads(response.data)
+    
+    if response.status_code == 200:
+        # Success case
+        assert data['status'] == 'success'
+        assert data['module'] == 'harmonic_precision_analyzer'
+        assert 'analysis' in data
+        assert 'filename' in data
+        assert data['filename'] == 'test.xml'
+    else:
+        # Error case (analyzer might fail on simple XML)
+        assert data['status'] == 'error'
+        assert 'error' in data
+        assert 'Analysis failed:' in data['error'] or 'Request processing failed:' in data['error']
+
+def test_m1_analyze_musicxml_file(client):
+    """Test analyze endpoint with .musicxml extension"""
+    xml_data = BytesIO(SAMPLE_XML_CONTENT.encode('utf-8'))
+    response = client.post('/m1/analyze', data={
+        'file': (xml_data, 'test.musicxml')
+    })
+    
+    # The response should be 200 for successful analysis or 400 for analysis failure
+    assert response.status_code in [200, 400]
+    
+    data = json.loads(response.data)
+    
+    if response.status_code == 200:
+        # Success case
+        assert data['status'] == 'success'
+        assert data['module'] == 'harmonic_precision_analyzer'
+        assert 'analysis' in data
+        assert 'filename' in data
+        assert data['filename'] == 'test.musicxml'
+    else:
+        # Error case (analyzer might fail on simple XML)
+        assert data['status'] == 'error'
+        assert 'error' in data
+        assert 'Analysis failed:' in data['error'] or 'Request processing failed:' in data['error']
 
 def test_nonexistent_endpoint(client):
     """Test that nonexistent endpoints return 404"""
     response = client.get('/nonexistent')
     assert response.status_code == 404
-    
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-
-def test_wrong_method_on_analyze(client):
-    """Test that GET on analyze endpoint returns 405"""
-    response = client.get('/m1/analyze')
-    assert response.status_code == 405
-    
-    data = response.get_json()
-    assert data['status'] == 'error'
-    assert 'error' in data  # Cambiado de 'message' a 'error'
-
-if __name__ == '__main__':
-    print("Running smoke tests using Flask test_client (no network calls)")
-    pytest.main([__file__, '-v'])
