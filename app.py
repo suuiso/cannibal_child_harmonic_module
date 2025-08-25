@@ -85,19 +85,25 @@ def version():
 def analyze():
     """Analyze XML file for harmonic precision"""
     try:
+        # Check content type for multipart/form-data
+        if not request.content_type or not request.content_type.startswith('multipart/form-data'):
+            return json_error("Content-Type must be multipart/form-data")
+        
         # Check if file is present
         if 'file' not in request.files:
             return json_error("No file provided")
         
         file = request.files['file']
-        if file.filename == '':
-            return json_error("No file selected")
+        if file.filename == '' or not file.filename:
+            return json_error("No file provided")
         
         if not file:
-            return json_error("Invalid file")
+            return json_error("No file provided")
         
-        # Validate file extension
-        if not file.filename.lower().endswith(('.xml', '.musicxml', '.mxl')):
+        # Validate file extension - accept XML, MusicXML, and MXL files
+        filename_lower = file.filename.lower()
+        valid_extensions = ('.xml', '.musicxml', '.mxl')
+        if not filename_lower.endswith(valid_extensions):
             return json_error("Invalid file type. Only XML, MusicXML, and MXL files are allowed.")
         
         # Create secure temporary file
